@@ -19,12 +19,17 @@
     "dev:worker": "npm run dev --workspace apps/worker",
     "dev:web": "npm run dev --workspace apps/web",
     "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "bench:micro": "tsx benchmarks/micro-bench.ts",
+    "bench:live": "tsx benchmarks/live-bench.ts",
+    "bench": "npm run bench:micro && npm run bench:live"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
+    "autocannon": "^7.15.0",
     "eslint": "^8.57.0",
+    "tsx": "^4.17.0",
     "typescript": "^5.5.4"
   }
 }
