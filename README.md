@@ -62,6 +62,7 @@ DocMind/
   apps/worker/        # BullMQ worker: parse → chunk → embed → index → notify pipeline
   apps/web/           # React (Vite) app: Library, Chat, Login, public Share page
   infra/atlas/        # Vector Search + Search index JSON definitions + setup instructions
+  benchmarks/         # micro + end-to-end benchmark scripts (see Benchmarks section below)
 ```
 
 ## Getting started
@@ -156,6 +157,80 @@ instances) — no real API key or network calls needed in CI.
 `chat:token` (streamed) → `chat:done` (persisted messages + citations) or `chat:error`.
 
 A formal OpenAPI spec will be added alongside Phase 4.
+
+## Benchmarks
+
+Real numbers, measured against a fully live local stack (API + worker + Mongo + Redis + Ollama),
+not estimates. Reproduce with:
+
+```bash
+npm run bench:micro    # pure-compute: chunking, cosine similarity, BM25, RRF
+npm run bench:live     # end-to-end: ingestion, hybrid search, chat, HTTP load (needs the stack running)
+```
+
+**Environment:** Apple M1 (8 cores, 8 GB RAM), macOS 26.5.2, Node v20.13.1, MongoDB 7.0.8 (local,
+non-Atlas — so hybrid search below ran the in-process fallback path, not `$vectorSearch`/`$search`),
+Redis 8.8.1, embeddings via `gemini-embedding-001`, generation via a local Ollama `llama3.2`
+(CPU/Metal inference, no GPU). These are local-dev-machine numbers, not a production SLA — re-run
+`npm run bench` on your own hardware/infra before citing them anywhere that matters.
+
+### Pure compute (`bench:micro`)
+
+| Component | Result |
+| --- | --- |
+| Chunking splitter (`splitText`) | 109–171 MB/s depending on document size (1 MB doc → 1,540 chunks in 8.9 ms) |
+| Cosine similarity (3072-dim) | p50 7 µs, ~110k–140k ops/sec |
+| BM25 scoring | 1000-chunk corpus: p50 13.7 ms/query (~72 queries/sec) |
+| Reciprocal rank fusion | 1000 candidates/list: p50 0.9 ms (~1,070 fusions/sec) |
+
+Takeaway: none of hybrid search's own scoring/fusion math is the bottleneck at these corpus
+sizes — BM25's linear IDF pass over the corpus is the most expensive piece, and even that's
+sub-15ms at 1,000 chunks. Real hybrid-search latency (below) is dominated by fetching candidates
+from Mongo, not by scoring them.
+
+### End-to-end (`bench:live`)
+
+**Ingestion** (upload → parse → chunk → embed → index, real Gemini embedding calls):
+
+| File size | Total time | Notes |
+| --- | --- | --- |
+| 2 KB | 763 ms | |
+| 20 KB | 1,927 ms | |
+| 100 KB | *failed* | Hit Gemini's free-tier embedding quota (100 requests/minute) after the first two uploads in the same run — a real, reproducible constraint, not a code bug. Space uploads out (or use a paid tier) if you're ingesting several documents back to back. |
+
+**Hybrid search** (in-process fallback path — cosine + BM25 + RRF over chunks fetched from Mongo):
+
+| Corpus size | p50 | p95 |
+| --- | --- | --- |
+| 50 chunks | 15 ms | 59 ms |
+| 200 chunks | 52 ms | 97 ms |
+| 1,000 chunks | 243 ms | 283 ms |
+
+This scales roughly linearly with corpus size, as expected for the brute-force fallback path (it
+fetches every scoped chunk from Mongo rather than using an ANN index) — see
+[why hybrid search works locally and on Atlas](#design-decisions). A real Atlas cluster's
+`$vectorSearch` would be expected to scale sub-linearly past a few thousand chunks; that's not
+measurable without a real Atlas cluster, so it isn't claimed here.
+
+**Chat** (real embedding + hybrid search + rerank + generation, local Ollama `llama3.2`):
+
+| Metric | p50 | p95 |
+| --- | --- | --- |
+| Time to first token | 12.6 s | 19.4 s |
+| Time to full answer | 16.4 s | 22.6 s |
+
+This is almost entirely Ollama generation time on unaccelerated local CPU/Metal inference on an
+8 GB M1 — not retrieval (which is tens of milliseconds per the table above). Swapping
+`LLM_PROVIDER=gemini` with a working paid-tier key, or running Ollama on a machine with more RAM
+or a dedicated GPU, would change this number substantially; it says more about this laptop than
+about the retrieval/generation architecture.
+
+**HTTP load** (`autocannon`, 10 connections × 10 s):
+
+| Endpoint | Throughput | p50 | p99 |
+| --- | --- | --- | --- |
+| `GET /health` | 6,164 req/sec | 1 ms | 4 ms |
+| `GET /api/documents` (authed) | 1,039 req/sec | 8 ms | 31 ms |
 
 ## Design decisions
 
