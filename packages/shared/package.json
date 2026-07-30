@@ -1,0 +1,26 @@
+{
+  "name": "@docmind/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.17.1",
+    "bullmq": "^5.12.12",
+    "ioredis": "^5.4.1",
+    "mongoose": "^8.5.3",
+    "pino": "^9.3.2",
+    "pino-pretty": "^11.2.2"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^9.4.1",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
