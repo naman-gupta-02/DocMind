@@ -1,0 +1,17 @@
+{
+  "name": "chunk_text_index",
+  "type": "search",
+  "definition": {
+    "mappings": {
+      "dynamic": false,
+      "fields": {
+        "text": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "objectId"
+        }
+      }
+    }
+  }
+}
